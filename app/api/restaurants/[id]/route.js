@@ -4,7 +4,7 @@ import { calculateExpiryDate } from '@/lib/db';
 
 export async function GET(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const restaurant = db.prepare(`
       SELECT r.*, 
@@ -16,7 +16,8 @@ export async function GET(request, { params }) {
         l.plan_duration,
         l.grace_period_days,
         l.start_date,
-        l.last_verified
+        l.last_verified,
+        l.cloud_backup_enabled
       FROM restaurants r
       LEFT JOIN licenses l ON r.id = l.restaurant_id AND l.status = 'active'
       WHERE r.id = ?
@@ -48,7 +49,7 @@ export async function GET(request, { params }) {
 
 export async function PATCH(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const data = await request.json();
 
     if (data.action === 'extend_expiry') {
@@ -133,6 +134,23 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({
         success: true,
         message: 'Restaurant activated'
+      });
+    }
+
+    // Cloud Backup Toggle
+    if (data.cloud_backup_enabled !== undefined) {
+      const cloudBackupEnabled = data.cloud_backup_enabled ? 1 : 0;
+      
+      db.prepare(`
+        UPDATE licenses 
+        SET cloud_backup_enabled = ?, updated_at = datetime('now')
+        WHERE restaurant_id = ? AND status = 'active'
+      `).run(cloudBackupEnabled, id);
+
+      return NextResponse.json({
+        success: true,
+        message: `Cloud backup ${cloudBackupEnabled ? 'enabled' : 'disabled'}`,
+        cloud_backup_enabled: Boolean(cloudBackupEnabled)
       });
     }
 

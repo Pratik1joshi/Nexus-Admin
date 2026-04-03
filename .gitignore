@@ -37,3 +37,10 @@ next-env.d.ts
 *.db-shm
 *.db-wal
 databases/
+
+# secrets
+firebase-service-account.json
+*service-account*.json
+
+# local temp artifacts
+tmpclaude-*-cwd

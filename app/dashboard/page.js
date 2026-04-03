@@ -3,25 +3,27 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  LayoutDashboard,
-  Store,
-  Key,
-  IndianRupee,
-  LogOut,
   Menu,
-  X,
   TrendingUp,
   AlertCircle,
   CheckCircle,
-  Clock
+  Clock,
+  Store,
+  Key,
+  IndianRupee,
+  Building2,
+  ShoppingBag,
+  Users,
+  Mail
 } from 'lucide-react';
 import { formatCurrency, formatDate, getDaysRemaining } from '@/lib/utils';
+import Sidebar from '@/components/Sidebar';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [stats, setStats] = useState(null);
-  const [recentRestaurants, setRecentRestaurants] = useState([]);
+  const [recentBusinesses, setRecentBusinesses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -40,10 +42,10 @@ export default function DashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      const res = await fetch('/api/dashboard');
+      const res = await fetch('/api/dashboard-firebase');
       const data = await res.json();
       setStats(data.stats);
-      setRecentRestaurants(data.recentRestaurants);
+      setRecentBusinesses(data.recentBusinesses);
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
     } finally {
@@ -67,63 +69,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r transform transition-transform duration-300 ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:translate-x-0`}>
-        <div className="flex items-center justify-between p-6 border-b">
-          <h1 className="text-xl font-bold text-blue-600">POS Admin</h1>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        <nav className="p-4 space-y-2">
-          <NavItem
-            icon={LayoutDashboard}
-            label="Dashboard"
-            active
-            onClick={() => router.push('/dashboard')}
-          />
-          <NavItem
-            icon={Store}
-            label="Restaurants"
-            onClick={() => router.push('/dashboard/restaurants')}
-          />
-          <NavItem
-            icon={Key}
-            label="Licenses"
-            onClick={() => router.push('/dashboard/licenses')}
-          />
-          <NavItem
-            icon={IndianRupee}
-            label="Payments"
-            onClick={() => router.push('/dashboard/payments')}
-          />
-        </nav>
-
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-gray-50">
-          <div className="mb-3">
-            <p className="text-sm font-semibold text-gray-900">{user?.full_name}</p>
-            <p className="text-xs text-gray-600">{user?.email}</p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <Sidebar activePage="dashboard" user={user} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
       {/* Main Content */}
       <div className="lg:ml-64">
@@ -150,43 +96,51 @@ export default function DashboardPage() {
 
         {/* Stats Grid */}
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
             <StatCard
-              icon={Store}
+              icon={Building2}
               label="Total Restaurants"
               value={stats?.totalRestaurants || 0}
+              color="orange"
+            />
+            <StatCard
+              icon={ShoppingBag}
+              label="Total Retail Shops"
+              value={stats?.totalShops || 0}
               color="blue"
             />
             <StatCard
-              icon={CheckCircle}
-              label="Active Licenses"
-              value={stats?.activeLicenses || 0}
-              color="green"
+              icon={Users}
+              label="Total Leads"
+              value={stats?.totalLeads || 0}
+              color="purple"
             />
             <StatCard
-              icon={Clock}
-              label="Expiring Soon"
-              value={stats?.expiringSoon || 0}
-              color="yellow"
+              icon={Mail}
+              label="Contact Requests"
+              value={stats?.totalContacts || 0}
+              color="cyan"
             />
             <StatCard
               icon={IndianRupee}
-              label="Monthly Revenue"
-              value={formatCurrency(stats?.monthlyRevenue || 0)}
-              color="purple"
+              label="Total Revenue"
+              value={formatCurrency(stats?.totalRevenue || 0)}
+              color="green"
             />
           </div>
 
-          {/* Recent Restaurants */}
+          {/* Recent Businesses */}
           <div className="bg-white rounded-lg shadow-sm border">
             <div className="p-6 border-b">
-              <h3 className="text-lg font-semibold text-gray-900">Recent Restaurants</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Recent Businesses</h3>
+              <p className="text-sm text-gray-600 mt-1">Latest restaurants and retail shops</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Restaurant</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Business</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">License Key</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
@@ -194,22 +148,30 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {recentRestaurants.map((restaurant) => {
-                    const daysLeft = restaurant.expiry_date ? getDaysRemaining(restaurant.expiry_date) : null;
+                  {recentBusinesses.map((business) => {
+                    const daysLeft = business.expiry_date ? getDaysRemaining(business.expiry_date) : null;
+                    const isActive = business.license_status === 'active' && daysLeft !== null && daysLeft > 0;
+                    const BusinessIcon = business.type === 'restaurant' ? Building2 : ShoppingBag;
                     return (
-                      <tr key={restaurant.id} className="hover:bg-gray-50">
+                      <tr key={business.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4">
-                          <div className="font-medium text-gray-900">{restaurant.name}</div>
-                          <div className="text-sm text-gray-600">{restaurant.phone}</div>
+                          <div className="font-medium text-gray-900">{business.name}</div>
+                          <div className="text-sm text-gray-600">{business.contact_number || business.phone}</div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">{restaurant.owner_name}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <BusinessIcon className={`w-4 h-4 ${business.type === 'restaurant' ? 'text-orange-600' : 'text-blue-600'}`} />
+                            <span className="text-sm capitalize text-gray-900">{business.type}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900">{business.owner_name}</td>
                         <td className="px-6 py-4">
                           <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                            {restaurant.license_key || 'No license'}
+                            {business.license_key || 'No license'}
                           </code>
                         </td>
                         <td className="px-6 py-4">
-                          {restaurant.license_status === 'active' && daysLeft > 0 ? (
+                          {isActive ? (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               Active
                             </span>
@@ -220,9 +182,9 @@ export default function DashboardPage() {
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
-                          {restaurant.expiry_date ? (
+                          {business.expiry_date ? (
                             <>
-                              {formatDate(restaurant.expiry_date)}
+                              {formatDate(business.expiry_date)}
                               {daysLeft !== null && (
                                 <div className={`text-xs mt-1 ${daysLeft <= 7 ? 'text-red-600' : 'text-gray-600'}`}>
                                   {daysLeft > 0 ? `${daysLeft} days left` : `Expired ${Math.abs(daysLeft)} days ago`}
@@ -246,28 +208,13 @@ export default function DashboardPage() {
   );
 }
 
-function NavItem({ icon: Icon, label, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-        active
-          ? 'bg-blue-50 text-blue-600'
-          : 'text-gray-700 hover:bg-gray-100'
-      }`}
-    >
-      <Icon className="w-5 h-5" />
-      <span className="font-medium">{label}</span>
-    </button>
-  );
-}
-
 function StatCard({ icon: Icon, label, value, color }) {
   const colors = {
     blue: 'bg-blue-100 text-blue-600',
     green: 'bg-green-100 text-green-600',
-    yellow: 'bg-yellow-100 text-yellow-600',
+    orange: 'bg-orange-100 text-orange-600',
     purple: 'bg-purple-100 text-purple-600',
+    cyan: 'bg-cyan-100 text-cyan-600',
   };
 
   return (

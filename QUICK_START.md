@@ -1,4 +1,4 @@
-# 🚀 Quick Start: Firebase Setup (5 Minutes)
+    # 🚀 Quick Start: Firebase Setup (5 Minutes)
 
 ## 1️⃣ Create Firebase Project (2 min)
 

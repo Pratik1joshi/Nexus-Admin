@@ -7,50 +7,51 @@ import {
   Plus,
   Search,
   Menu,
-  X,
-  LayoutDashboard,
-  Key,
-  IndianRupee,
-  LogOut,
   Phone,
   Mail,
   MapPin,
   Calendar,
   CheckCircle,
   XCircle,
-  Clock
+  Clock,
+  AlertTriangle,
+  X,
+  Trash2
 } from 'lucide-react';
 import { formatDate, getDaysRemaining, PLAN_TYPES } from '@/lib/utils';
+import Sidebar from '@/components/Sidebar';
 
 export default function RestaurantsPage() {
   const router = useRouter();
+  const [user, setUser] = useState(null);
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ show: false, restaurant: null, step: 1 });
+  const [deleteInput, setDeleteInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     owner_name: '',
-    phone: '',
-    email: '',
-    address: '',
-    city: '',
-    state: '',
-    pan_number: '',
-    gst_number: '',
-    plan_type: 'MONTHLY',
-    plan_duration: 1,
-    amount: 999
+    contact_number: '',
+    contact_email: '',
+    location: '',
+    plan_type: 'monthly',
   });
 
   useEffect(() => {
+    const userData = localStorage.getItem('admin_user');
+    if (userData) {
+      setUser(JSON.parse(userData));
+    }
     fetchRestaurants();
   }, []);
 
   const fetchRestaurants = async () => {
     try {
-      const res = await fetch('/api/restaurants');
+      const res = await fetch('/api/restaurants-firebase');
       const data = await res.json();
       setRestaurants(data.restaurants);
     } catch (error) {
@@ -63,7 +64,7 @@ export default function RestaurantsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/restaurants', {
+      const res = await fetch('/api/restaurants-firebase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -75,16 +76,10 @@ export default function RestaurantsPage() {
         setFormData({
           name: '',
           owner_name: '',
-          phone: '',
-          email: '',
-          address: '',
-          city: '',
-          state: '',
-          pan_number: '',
-          gst_number: '',
-          plan_type: 'MONTHLY',
-          plan_duration: 1,
-          amount: 999
+          contact_number: '',
+          contact_email: '',
+          location: '',
+          plan_type: 'monthly',
         });
         alert('Restaurant added successfully!');
       }
@@ -95,62 +90,98 @@ export default function RestaurantsPage() {
   };
 
   const handlePlanChange = (planKey) => {
-    const plan = PLAN_TYPES[planKey];
     setFormData({
       ...formData,
       plan_type: planKey,
-      plan_duration: plan.duration,
-      amount: plan.price
     });
+  };
+
+  const initiateDelete = (restaurant, e) => {
+    e.stopPropagation();
+    setDeleteConfirm({ show: true, restaurant, step: 1 });
+    setDeleteInput('');
+  };
+
+  const confirmDelete = async () => {
+    if (deleteConfirm.step === 1) {
+      setDeleteConfirm({ ...deleteConfirm, step: 2 });
+      return;
+    }
+
+    if (deleteConfirm.step === 2) {
+      if (deleteInput !== deleteConfirm.restaurant.name) {
+        alert('Restaurant name does not match. Please type exactly: ' + deleteConfirm.restaurant.name);
+        return;
+      }
+      setDeleteConfirm({ ...deleteConfirm, step: 3 });
+      setDeleteInput('');
+      return;
+    }
+
+    if (deleteConfirm.step === 3) {
+      if (deleteInput.toUpperCase() !== 'DELETE PERMANENTLY') {
+        alert('Please type exactly: DELETE PERMANENTLY');
+        return;
+      }
+
+      setDeleting(true);
+      try {
+        const res = await fetch(`/api/restaurants-firebase?id=${deleteConfirm.restaurant.id}`, {
+          method: 'DELETE'
+        });
+
+        if (res.ok) {
+          const result = await res.json();
+          alert(`Successfully deleted ${result.deleted.restaurant}\n\nDeleted:\n- ${result.deleted.licenses} license(s)\n- ${result.deleted.payments} payment(s)\n- ${result.deleted.shops} shop(s)`);
+          setDeleteConfirm({ show: false, restaurant: null, step: 1 });
+          fetchRestaurants();
+        } else {
+          const error = await res.json();
+          alert('Failed to delete: ' + error.error);
+        }
+      } catch (error) {
+        console.error('Delete error:', error);
+        alert('Failed to delete restaurant');
+      } finally {
+        setDeleting(false);
+      }
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeleteConfirm({ show: false, restaurant: null, step: 1 });
+    setDeleteInput('');
   };
 
   const filteredRestaurants = restaurants.filter(r =>
     r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.owner_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.phone.includes(searchTerm)
+    (r.owner_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.contact_number || r.phone || '').includes(searchTerm)
   );
+
+  // Calculate expiry statistics
+  const expiredRestaurants = restaurants.filter(r => {
+    if (!r.expiry_date) return false;
+    const daysLeft = getDaysRemaining(r.expiry_date);
+    return daysLeft < 0;
+  });
+
+  const expiringSoonRestaurants = restaurants.filter(r => {
+    if (!r.expiry_date) return false;
+    const daysLeft = getDaysRemaining(r.expiry_date);
+    return daysLeft >= 0 && daysLeft <= 7;
+  });
+
+  const inGracePeriodRestaurants = restaurants.filter(r => {
+    if (!r.expiry_date) return false;
+    const daysLeft = getDaysRemaining(r.expiry_date);
+    const graceDays = r.grace_period_days || 5;
+    return daysLeft < 0 && daysLeft >= -graceDays;
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r transform transition-transform duration-300 ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:translate-x-0`}>
-        <div className="flex items-center justify-between p-6 border-b">
-          <h1 className="text-xl font-bold text-blue-600">POS Admin</h1>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        <nav className="p-4 space-y-2">
-          <NavItem
-            icon={LayoutDashboard}
-            label="Dashboard"
-            onClick={() => router.push('/dashboard')}
-          />
-          <NavItem
-            icon={Store}
-            label="Restaurants"
-            active
-            onClick={() => router.push('/dashboard/restaurants')}
-          />
-          <NavItem
-            icon={Key}
-            label="Licenses"
-            onClick={() => router.push('/dashboard/licenses')}
-          />
-          <NavItem
-            icon={IndianRupee}
-            label="Payments"
-            onClick={() => router.push('/dashboard/payments')}
-          />
-        </nav>
-      </aside>
-
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
+      <Sidebar activePage="restaurants" user={user} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
       {/* Main Content */}
       <div className="lg:ml-64">
@@ -173,6 +204,93 @@ export default function RestaurantsPage() {
         </header>
 
         <div className="p-6">
+          {/* Alert Banners */}
+          {expiredRestaurants.length > 0 && (
+            <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+              <div className="flex items-center gap-3">
+                <XCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
+                <div>
+                  <h3 className="text-red-900 font-bold text-lg">
+                    🚨 {expiredRestaurants.length} Restaurant{expiredRestaurants.length > 1 ? 's' : ''} Expired
+                  </h3>
+                  <p className="text-red-700 text-sm mt-1">
+                    {inGracePeriodRestaurants.length > 0 && (
+                      <span>{inGracePeriodRestaurants.length} in grace period. </span>
+                    )}
+                    Immediate action required to prevent system lockout.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {expiredRestaurants.slice(0, 5).map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => router.push(`/dashboard/restaurants/${r.id}`)}
+                        className="text-xs bg-red-100 hover:bg-red-200 text-red-800 px-3 py-1 rounded-full font-medium transition-colors"
+                      >
+                        {r.name}
+                      </button>
+                    ))}
+                    {expiredRestaurants.length > 5 && (
+                      <span className="text-xs text-red-700 px-3 py-1">
+                        +{expiredRestaurants.length - 5} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {expiringSoonRestaurants.length > 0 && (
+            <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
+              <div className="flex items-center gap-3">
+                <Clock className="w-6 h-6 text-yellow-600 flex-shrink-0" />
+                <div>
+                  <h3 className="text-yellow-900 font-bold text-lg">
+                    ⚠️ {expiringSoonRestaurants.length} Restaurant{expiringSoonRestaurants.length > 1 ? 's' : ''} Expiring Soon
+                  </h3>
+                  <p className="text-yellow-700 text-sm mt-1">
+                    Licenses expiring within 7 days. Extend now to avoid disruption.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {expiringSoonRestaurants.slice(0, 5).map(r => {
+                      const daysLeft = getDaysRemaining(r.expiry_date);
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => router.push(`/dashboard/restaurants/${r.id}`)}
+                          className="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-3 py-1 rounded-full font-medium transition-colors"
+                        >
+                          {r.name} ({daysLeft} day{daysLeft !== 1 ? 's' : ''})
+                        </button>
+                      );
+                    })}
+                    {expiringSoonRestaurants.length > 5 && (
+                      <span className="text-xs text-yellow-700 px-3 py-1">
+                        +{expiringSoonRestaurants.length - 5} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {expiredRestaurants.length === 0 && expiringSoonRestaurants.length === 0 && restaurants.length > 0 && (
+            <div className="mb-6 bg-green-50 border-l-4 border-green-500 p-4 rounded-lg">
+              <div className="flex items-center gap-3">
+                <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
+                <div>
+                  <h3 className="text-green-900 font-bold text-lg">
+                    ✅ All Licenses Active
+                  </h3>
+                  <p className="text-green-700 text-sm mt-1">
+                    All {restaurants.length} restaurant{restaurants.length > 1 ? 's' : ''} have active licenses with no immediate concerns.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Search */}
           <div className="mb-6">
             <div className="relative">
@@ -197,11 +315,19 @@ export default function RestaurantsPage() {
               return (
                 <div 
                   key={restaurant.id} 
-                  onClick={() => router.push(`/dashboard/restaurants/${restaurant.id}`)}
-                  className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow cursor-pointer"
+                  className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow relative group"
                 >
-                  <div className="p-6">
-                    <div className="flex items-start justify-between mb-4">
+                  {/* Delete Button - Top Right */}
+                  <button
+                    onClick={(e) => initiateDelete(restaurant, e)}
+                    className="absolute top-3 right-3 p-2 bg-red-50 text-red-600 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 z-10"
+                    title="Delete Restaurant"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+
+                  <div className="p-6 cursor-pointer" onClick={() => router.push(`/dashboard/restaurants/${restaurant.id}`)}>
+                    <div className="flex items-start justify-between mb-4 pr-8">
                       <div>
                         <h3 className="text-lg font-bold text-gray-900 mb-1 hover:text-blue-600">{restaurant.name}</h3>
                         <p className="text-sm text-gray-600">{restaurant.owner_name}</p>
@@ -216,18 +342,18 @@ export default function RestaurantsPage() {
                     <div className="space-y-2 mb-4">
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Phone className="w-4 h-4" />
-                        {restaurant.phone}
+                        {restaurant.contact_number || restaurant.phone}
                       </div>
-                      {restaurant.email && (
+                      {(restaurant.contact_email || restaurant.email) && (
                         <div className="flex items-center gap-2 text-sm text-gray-600">
                           <Mail className="w-4 h-4" />
-                          {restaurant.email}
+                          {restaurant.contact_email || restaurant.email}
                         </div>
                       )}
-                      {restaurant.city && (
+                      {restaurant.location && (
                         <div className="flex items-center gap-2 text-sm text-gray-600">
                           <MapPin className="w-4 h-4" />
-                          {restaurant.city}, {restaurant.state}
+                          {restaurant.location}
                         </div>
                       )}
                     </div>
@@ -314,73 +440,35 @@ export default function RestaurantsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number *</label>
                   <input
                     type="tel"
                     required
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    value={formData.contact_number}
+                    onChange={(e) => setFormData({ ...formData, contact_number: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
                   <input
                     type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    value={formData.contact_email}
+                    onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Location *</label>
                   <input
                     type="text"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    required
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
-                  <input
-                    type="text"
-                    value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
-                  <input
-                    type="text"
-                    value={formData.state}
-                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">PAN Number</label>
-                  <input
-                    type="text"
-                    value={formData.pan_number}
-                    onChange={(e) => setFormData({ ...formData, pan_number: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">GST Number</label>
-                  <input
-                    type="text"
-                    value={formData.gst_number}
-                    onChange={(e) => setFormData({ ...formData, gst_number: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="City, State or Full Address"
                   />
                 </div>
               </div>
@@ -425,20 +513,118 @@ export default function RestaurantsPage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
 
-function NavItem({ icon: Icon, label, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-        active ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'
-      }`}
-    >
-      <Icon className="w-5 h-5" />
-      <span className="font-medium">{label}</span>
-    </button>
+      {/* Delete Confirmation Modal - Multi-Step */}
+      {deleteConfirm.show && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl">
+            <div className="p-6 border-b bg-red-50">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-red-100 rounded-full">
+                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-red-900">Delete Restaurant</h3>
+                  <p className="text-sm text-red-700">Step {deleteConfirm.step} of 3</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {deleteConfirm.step === 1 && (
+                <div className="space-y-4">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <p className="text-sm text-yellow-800 font-medium">
+                      ⚠️ You are about to delete:
+                    </p>
+                    <p className="text-lg font-bold text-gray-900 mt-2">
+                      {deleteConfirm.restaurant.name}
+                    </p>
+                  </div>
+                  
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-sm font-bold text-red-900 mb-2">This will permanently delete:</p>
+                    <ul className="text-sm text-red-800 space-y-1 list-disc list-inside">
+                      <li>Restaurant information</li>
+                      <li>All license data</li>
+                      <li>Payment history</li>
+                      <li>Associated shops</li>
+                      <li>All related records</li>
+                    </ul>
+                  </div>
+
+                  <p className="text-sm text-gray-600 font-medium">
+                    ⚠️ <strong>This action cannot be undone!</strong>
+                  </p>
+                </div>
+              )}
+
+              {deleteConfirm.step === 2 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-700">
+                    To confirm deletion, please type the restaurant name exactly:
+                  </p>
+                  <div className="bg-gray-100 p-3 rounded-lg border border-gray-300">
+                    <p className="font-mono font-bold text-gray-900">
+                      {deleteConfirm.restaurant.name}
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    value={deleteInput}
+                    onChange={(e) => setDeleteInput(e.target.value)}
+                    placeholder="Type restaurant name here"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {deleteConfirm.step === 3 && (
+                <div className="space-y-4">
+                  <div className="bg-red-100 border-2 border-red-300 rounded-lg p-4">
+                    <p className="text-sm font-bold text-red-900 mb-2">
+                      🚨 FINAL CONFIRMATION
+                    </p>
+                    <p className="text-sm text-red-800">
+                      This is your last chance. Type <strong>DELETE PERMANENTLY</strong> to confirm:
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    value={deleteInput}
+                    onChange={(e) => setDeleteInput(e.target.value)}
+                    placeholder="Type: DELETE PERMANENTLY"
+                    className="w-full px-4 py-3 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent font-bold"
+                    autoFocus
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t bg-gray-50 flex gap-3">
+              <button
+                onClick={cancelDelete}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className={`flex-1 px-4 py-2 rounded-lg font-semibold disabled:opacity-50 ${
+                  deleteConfirm.step === 3
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                }`}
+              >
+                {deleting ? 'Deleting...' : deleteConfirm.step === 3 ? 'DELETE PERMANENTLY' : 'Continue'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

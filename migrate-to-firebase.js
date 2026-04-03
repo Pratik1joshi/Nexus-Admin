@@ -3,18 +3,41 @@
 
 import Database from 'better-sqlite3';
 import admin from 'firebase-admin';
-import path from 'path';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config({ path: '.env.local' });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Initialize Firebase Admin
-const serviceAccount = require('./firebase-service-account.json');
+let serviceAccount;
+try {
+  // Try to read from file first
+  const serviceAccountPath = join(__dirname, 'firebase-service-account.json');
+  serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+  console.log('✓ Loaded service account from file\n');
+} catch (error) {
+  // Fallback to environment variable
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    console.log('✓ Loaded service account from environment variable\n');
+  } else {
+    console.error('❌ Error: No service account found!');
+    console.error('Please either:');
+    console.error('1. Place firebase-service-account.json in this folder, OR');
+    console.error('2. Set FIREBASE_SERVICE_ACCOUNT_KEY in .env.local\n');
+    process.exit(1);
+  }
+}
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
+  projectId: serviceAccount.project_id
 });
 
 const firestore = admin.firestore();

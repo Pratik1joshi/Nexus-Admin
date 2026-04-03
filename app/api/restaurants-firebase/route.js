@@ -36,7 +36,19 @@ export async function GET(request) {
         .get();
       
       if (!licenseSnapshot.empty) {
-        restaurant.license = licenseSnapshot.docs[0].data();
+        const licenseData = licenseSnapshot.docs[0].data();
+        restaurant.license_key = licenseData.license_key;
+        restaurant.expiry_date = licenseData.expiry_date;
+        restaurant.license_status = licenseData.status;
+        restaurant.plan_type = licenseData.plan_type;
+        restaurant.start_date = licenseData.start_date;
+        restaurant.cloud_backup_enabled = licenseData.cloud_backup_enabled || false;
+        restaurant.license = {
+          license_key: licenseData.license_key,
+          plan_type: licenseData.plan_type,
+          expiry_date: licenseData.expiry_date,
+          status: licenseData.status
+        };
       }
       
       restaurants.push(restaurant);
@@ -52,10 +64,99 @@ export async function GET(request) {
   }
 }
 
+export async function DELETE(request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const restaurantId = searchParams.get('id');
+
+    if (!restaurantId) {
+      return NextResponse.json(
+        { error: 'Restaurant ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Get restaurant data before deletion
+    const restaurantDoc = await adminDb.collection('restaurants').doc(restaurantId).get();
+    if (!restaurantDoc.exists) {
+      return NextResponse.json(
+        { error: 'Restaurant not found' },
+        { status: 404 }
+      );
+    }
+
+    const restaurantData = restaurantDoc.data();
+
+    // Delete all licenses associated with this restaurant
+    const licensesSnapshot = await adminDb.collection('licenses')
+      .where('restaurant_id', '==', restaurantId)
+      .get();
+    
+    const deletionPromises = [];
+    
+    licensesSnapshot.forEach(doc => {
+      deletionPromises.push(doc.ref.delete());
+    });
+
+    // Delete all payments associated with this restaurant
+    const paymentsSnapshot = await adminDb.collection('payments')
+      .where('restaurant_id', '==', restaurantId)
+      .get();
+    
+    paymentsSnapshot.forEach(doc => {
+      deletionPromises.push(doc.ref.delete());
+    });
+
+    // Delete all shops associated with this restaurant (if exists)
+    const shopsSnapshot = await adminDb.collection('shops')
+      .where('restaurant_id', '==', restaurantId)
+      .get();
+    
+    shopsSnapshot.forEach(doc => {
+      deletionPromises.push(doc.ref.delete());
+    });
+
+    // Delete the restaurant document
+    deletionPromises.push(adminDb.collection('restaurants').doc(restaurantId).delete());
+
+    // Execute all deletions
+    await Promise.all(deletionPromises);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Restaurant and all associated data deleted successfully',
+      deleted: {
+        restaurant: restaurantData.name,
+        licenses: licensesSnapshot.size,
+        payments: paymentsSnapshot.size,
+        shops: shopsSnapshot.size
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting restaurant:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete restaurant', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, location, contact_number, contact_email, owner_name, plan_type } = body;
+    const { 
+      name, 
+      location, 
+      contact_number, 
+      contact_email, 
+      owner_name, 
+      plan_type,
+      license_key: providedLicenseKey,
+      expiry_date: providedExpiryDate,
+      grace_period_days: providedGraceDays,
+      status: providedStatus,
+      license_status: providedLicenseStatus
+    } = body;
 
     // Validate required fields
     if (!name || !location || !contact_number || !plan_type) {
@@ -75,17 +176,17 @@ export async function POST(request) {
       contact_number,
       contact_email: contact_email || '',
       owner_name: owner_name || '',
-      status: 'active',
+      status: providedStatus || 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
     await restaurantRef.set(restaurant);
 
-    // Generate license
-    const licenseKey = generateLicenseKey(restaurantId.substring(0, 8));
+    // Use provided license key or generate new one
+    const licenseKey = providedLicenseKey || generateLicenseKey(restaurantId.substring(0, 8));
     const startDate = new Date().toISOString();
-    const expiryDate = calculateExpiryDate(startDate, plan_type);
+    const expiryDate = providedExpiryDate || calculateExpiryDate(startDate, plan_type);
 
     const planPrices = {
       'monthly': 999,
@@ -99,8 +200,8 @@ export async function POST(request) {
       plan_type,
       start_date: startDate,
       expiry_date: expiryDate,
-      status: 'active',
-      grace_period_days: 5,
+      status: providedLicenseStatus || 'active',
+      grace_period_days: providedGraceDays || 5,
       last_verified: null,
       created_at: new Date().toISOString()
     };
@@ -121,6 +222,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
+      restaurant_id: restaurantId,
       restaurant: { id: restaurantId, ...restaurant },
       license
     });

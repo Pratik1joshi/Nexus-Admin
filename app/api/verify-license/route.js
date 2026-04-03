@@ -12,6 +12,15 @@ export async function POST(request) {
       );
     }
 
+    // Check if Firebase is initialized
+    if (!adminDb) {
+      console.error('Firebase Admin not initialized');
+      return NextResponse.json(
+        { error: 'Server configuration error', valid: false },
+        { status: 500 }
+      );
+    }
+
     // Get license info from Firebase
     const licenseDoc = await adminDb.collection('licenses').doc(license_key).get();
 
@@ -24,23 +33,27 @@ export async function POST(request) {
 
     const license = licenseDoc.data();
 
-    // Get restaurant info
-    const restaurantDoc = await adminDb.collection('restaurants').doc(license.restaurant_id).get();
+    // Determine business type (default to restaurant for backward compatibility)
+    const businessType = license.business_type || 'restaurant';
+    const businessId = license.business_id || license.restaurant_id;
     
-    if (!restaurantDoc.exists) {
+    // Get business info from appropriate collection
+    const businessDoc = await adminDb.collection(businessType === 'retail' ? 'shops' : 'restaurants').doc(businessId).get();
+    
+    if (!businessDoc.exists) {
       return NextResponse.json({
         valid: false,
-        error: 'Restaurant not found'
+        error: `${businessType === 'retail' ? 'Shop' : 'Restaurant'} not found`
       });
     }
 
-    const restaurant = restaurantDoc.data();
+    const business = businessDoc.data();
 
-    // Check if restaurant is active
-    if (restaurant.status !== 'active') {
+    // Check if business is active
+    if (business.status !== 'active') {
       return NextResponse.json({
         valid: false,
-        error: 'Restaurant account is suspended'
+        error: `${businessType === 'retail' ? 'Shop' : 'Restaurant'} account is suspended`
       });
     }
 
@@ -57,7 +70,9 @@ export async function POST(request) {
     const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
     await adminDb.collection('verification_logs').add({
       license_key,
-      restaurant_id: license.restaurant_id,
+      business_id: businessId,
+      business_type: businessType,
+      restaurant_id: license.restaurant_id, // Keep for backward compatibility
       verification_status: daysRemaining > 0 ? 'valid' : 'expired',
       ip_address: clientIp,
       timestamp: new Date().toISOString()
@@ -76,13 +91,27 @@ export async function POST(request) {
           error: 'License has expired',
           expiry_date: license.expiry_date,
           days_remaining: daysRemaining,
+          grace_period_days: license.grace_period_days || 5, // Always return grace period
+          business_type: businessType,
+          // Unified response for both types
+          restaurant_name: business.name,
+          restaurant_address: business.address || business.location,
+          restaurant_phone: business.phone || business.contact_number,
+          restaurant_email: business.email || business.contact_email,
+          owner_name: business.owner_name,
+          // Also include as nested object
           restaurant: {
-            name: restaurant.name,
-            location: restaurant.location,
-            contact_number: restaurant.contact_number,
-            contact_email: restaurant.contact_email,
-            owner_name: restaurant.owner_name
-          }
+            name: business.name,
+            location: business.address || business.location,
+            contact_number: business.phone || business.contact_number,
+            contact_email: business.email || business.contact_email,
+            owner_name: business.owner_name
+          },
+          // Shop-specific aliases
+          shop_name: business.name,
+          shop_address: business.address || business.location,
+          shop_phone: business.phone || business.contact_number,
+          shop_email: business.email || business.contact_email
         });
       }
 
@@ -93,13 +122,25 @@ export async function POST(request) {
         expiry_date: license.expiry_date,
         days_remaining: daysRemaining,
         grace_remaining: graceRemaining,
+        grace_period_days: license.grace_period_days || 5,
+        business_type: businessType,
+        // Unified response
+        restaurant_name: business.name,
+        restaurant_address: business.address || business.location,
+        restaurant_phone: business.phone || business.contact_number,
+        restaurant_email: business.email || business.contact_email,
+        owner_name: business.owner_name,
         restaurant: {
-          name: restaurant.name,
-          location: restaurant.location,
-          contact_number: restaurant.contact_number,
-          contact_email: restaurant.contact_email,
-          owner_name: restaurant.owner_name
+          name: business.name,
+          location: business.address || business.location,
+          contact_number: business.phone || business.contact_number,
+          contact_email: business.email || business.contact_email,
+          owner_name: business.owner_name
         },
+        shop_name: business.name,
+        shop_address: business.address || business.location,
+        shop_phone: business.phone || business.contact_number,
+        shop_email: business.email || business.contact_email,
         plan_type: license.plan_type
       });
     }
@@ -109,13 +150,25 @@ export async function POST(request) {
       status: daysRemaining <= 7 ? 'expiring_soon' : 'active',
       expiry_date: license.expiry_date,
       days_remaining: daysRemaining,
+      grace_period_days: license.grace_period_days || 5,
+      business_type: businessType,
+      // Unified response for both types
+      restaurant_name: business.name,
+      restaurant_address: business.address || business.location,
+      restaurant_phone: business.phone || business.contact_number,
+      restaurant_email: business.email || business.contact_email,
+      owner_name: business.owner_name,
       restaurant: {
-        name: restaurant.name,
-        location: restaurant.location,
-        contact_number: restaurant.contact_number,
-        contact_email: restaurant.contact_email,
-        owner_name: restaurant.owner_name
+        name: business.name,
+        location: business.address || business.location,
+        contact_number: business.phone || business.contact_number,
+        contact_email: business.email || business.contact_email,
+        owner_name: business.owner_name
       },
+      shop_name: business.name,
+      shop_address: business.address || business.location,
+      shop_phone: business.phone || business.contact_number,
+      shop_email: business.email || business.contact_email,
       plan_type: license.plan_type
     });
   } catch (error) {
