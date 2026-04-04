@@ -94,7 +94,6 @@ export async function GET(request) {
         size_kb: backupData.size_kb
       });
     }
-    });
     
   } catch (error) {
     console.error('Download backup error:', error);
